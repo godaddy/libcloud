@@ -21,10 +21,12 @@ from libcloud.utils.py3 import ET
 from libcloud.utils.py3 import httplib
 
 from libcloud.common.base import ConnectionUserAndKey, Response
+from libcloud.common.exceptions import BaseHTTPError
 from libcloud.common.types import ProviderError
 from libcloud.compute.types import (LibcloudError, MalformedResponseError)
 from libcloud.compute.types import KeyPairDoesNotExistError
-from libcloud.common.openstack_identity import get_class_for_auth_version
+from libcloud.common.openstack_identity import (AUTH_TOKEN_HEADER,
+                                                get_class_for_auth_version)
 
 # Imports for backward compatibility reasons
 from libcloud.common.openstack_identity import (OpenStackServiceCatalog,
@@ -132,6 +134,10 @@ class OpenStackBaseConnection(ConnectionUserAndKey):
                                     If not specified, a provider specific
                                     default will be used.
     :type ex_force_service_region: ``str``
+
+    :param ex_auth_cache: A cache where authentication tokens are stored for
+                          reuse by other processes.
+    :type ex_auth_cache: :class:`OpenStackAuthenticationCache`
     """
 
     auth_url = None  # type: str
@@ -158,6 +164,7 @@ class OpenStackBaseConnection(ConnectionUserAndKey):
                  ex_force_service_type=None,
                  ex_force_service_name=None,
                  ex_force_service_region=None,
+                 ex_auth_cache=None,
                  retry_delay=None, backoff=None):
         super(OpenStackBaseConnection, self).__init__(
             user_id, key, secure=secure, timeout=timeout,
@@ -177,6 +184,7 @@ class OpenStackBaseConnection(ConnectionUserAndKey):
         self._ex_force_service_type = ex_force_service_type
         self._ex_force_service_name = ex_force_service_name
         self._ex_force_service_region = ex_force_service_region
+        self._ex_auth_cache = ex_auth_cache
         self._osa = None
 
         if ex_force_auth_token and not ex_force_base_url:
@@ -215,7 +223,8 @@ class OpenStackBaseConnection(ConnectionUserAndKey):
                             token_scope=self._ex_token_scope,
                             timeout=self.timeout,
                             proxy_url=self.proxy_url,
-                            parent_conn=self)
+                            parent_conn=self,
+                            auth_cache=self._ex_auth_cache)
 
         return self._osa
 
@@ -229,12 +238,15 @@ class OpenStackBaseConnection(ConnectionUserAndKey):
         if method.upper() in ['POST', 'PUT'] and default_content_type:
             headers = {'Content-Type': default_content_type}
 
-        return super(OpenStackBaseConnection, self).request(action=action,
-                                                            params=params,
-                                                            data=data,
-                                                            method=method,
-                                                            headers=headers,
-                                                            raw=raw)
+        try:
+            return super().request(action=action, params=params, data=data,
+                                   method=method, headers=headers, raw=raw)
+        except BaseHTTPError as ex:
+            # Evict cached auth token if we receive Unauthorized while using it
+            if (ex.code == httplib.UNAUTHORIZED
+                    and self._ex_force_auth_token is None):
+                self.get_auth_class().clear_cached_auth_context()
+            raise
 
     def _get_auth_url(self):
         """
@@ -296,7 +308,7 @@ class OpenStackBaseConnection(ConnectionUserAndKey):
         return url
 
     def add_default_headers(self, headers):
-        headers['X-Auth-Token'] = self.auth_token
+        headers[AUTH_TOKEN_HEADER] = self.auth_token
         headers['Accept'] = self.accept_format
         return headers
 
@@ -435,7 +447,8 @@ class OpenStackDriverMixin(object):
                  ex_tenant_domain_id='default',
                  ex_force_service_type=None,
                  ex_force_service_name=None,
-                 ex_force_service_region=None, *args, **kwargs):
+                 ex_force_service_region=None,
+                 ex_auth_cache=None, *args, **kwargs):
         self._ex_force_base_url = ex_force_base_url
         self._ex_force_auth_url = ex_force_auth_url
         self._ex_force_auth_version = ex_force_auth_version
@@ -447,6 +460,7 @@ class OpenStackDriverMixin(object):
         self._ex_force_service_type = ex_force_service_type
         self._ex_force_service_name = ex_force_service_name
         self._ex_force_service_region = ex_force_service_region
+        self._ex_auth_cache = ex_auth_cache
 
     def openstack_connection_kwargs(self):
         """
@@ -477,4 +491,6 @@ class OpenStackDriverMixin(object):
             rv['ex_force_service_name'] = self._ex_force_service_name
         if self._ex_force_service_region:
             rv['ex_force_service_region'] = self._ex_force_service_region
+        if self._ex_auth_cache is not None:
+            rv['ex_auth_cache'] = self._ex_auth_cache
         return rv
