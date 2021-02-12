@@ -86,7 +86,9 @@ __all__ = [
 
 class OpenStackAuthenticationCache:
     """
-    Cache for OpenStack authentication contexts.
+    Base class for OpenStack authentication caches.
+
+    The abstract methods below must be implemented by inheritors.
     """
     def get(self, key):
         """
