@@ -1462,8 +1462,9 @@ class OpenStackIdentity_3_0_Connection(OpenStackIdentityConnection):
         # from Keystone.
         try:
             self._fetch_auth_token()
-        except InvalidCredsError:  # Unauthorized
-            self.clear_cached_auth_context()
+        except InvalidCredsError:
+            # Unauthorized; cached auth context was cleared as part of
+            # _fetch_auth_token
             return None
 
         # Local auth context variables set in _fetch_auth_token
