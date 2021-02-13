@@ -88,7 +88,7 @@ class OpenStackAuthenticationCache:
     """
     Base class for OpenStack authentication caches.
 
-    The abstract methods below must be implemented by inheritors.
+    Cache implementors should inherit this class and define the methods below.
     """
     def get(self, key):
         """
