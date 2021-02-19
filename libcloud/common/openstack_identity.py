@@ -807,6 +807,8 @@ class OpenStackIdentityConnection(ConnectionUserAndKey):
         if self.is_token_valid():
             return False
 
+        # _fetch_auth_context_from_cache can change the outcome of
+        # is_token_valid, so re-evaluate it
         if (self._fetch_auth_context_from_cache() is not None
                 and self.is_token_valid()):
             return False
