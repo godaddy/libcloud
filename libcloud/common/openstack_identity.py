@@ -86,7 +86,14 @@ __all__ = [
 
 class OpenStackAuthenticationCache:
     """
-    Base class for OpenStack authentication caches.
+    Base class for external OpenStack authentication caches.
+
+    Authentication tokens are always cached in memory in
+    :class:`OpenStackIdentityConnection`.auth_token and related fields.  These
+    tokens are lost when the driver is garbage collected.  To share tokens
+    among multiple drivers, processes, or systems, use an
+    :class:`OpenStackAuthenticationCache` in
+    OpenStackIdentityConnection.auth_cache.
 
     Cache implementors should inherit this class and define the methods below.
     """
@@ -746,15 +753,18 @@ class OpenStackIdentityConnection(ConnectionUserAndKey):
     def clear_cached_auth_context(self):
         """
         Clear the cached authentication context.
-        """
-        if self.auth_cache is not None:
-            self.auth_cache.clear(self._cache_key)
 
-        self.urls = {}
+        The context is cleared from fields on this connection and from the
+        external cache, if one is configured.
+        """
         self.auth_token = None
         self.auth_token_expires = None
         self.auth_user_info = None
         self.auth_user_roles = None
+        self.urls = {}
+
+        if self.auth_cache is not None:
+            self.auth_cache.clear(self._cache_key)
 
     def list_supported_versions(self):
         """
@@ -807,10 +817,12 @@ class OpenStackIdentityConnection(ConnectionUserAndKey):
         if self.is_token_valid():
             return False
 
-        # _fetch_auth_context_from_cache can change the outcome of
-        # is_token_valid, so re-evaluate it
-        if (self._fetch_auth_context_from_cache() is not None
-                and self.is_token_valid()):
+        # See if there's a new token in the cache
+        self._fetch_auth_context_from_cache()
+
+        # If there was a token in the cache, it is now stored in our local
+        # auth_token and related fields.  Ensure it is still valid.
+        if self.is_token_valid():
             return False
 
         return True
@@ -850,14 +862,14 @@ class OpenStackIdentityConnection(ConnectionUserAndKey):
         :param context: Authentication context to cache.
         :type key: :class:`.OpenStackAuthenticationContext`
         """
-        if self.auth_cache is not None:
-            self.auth_cache.put(self._cache_key, context)
-
         self.urls = context.urls
         self.auth_token = context.token
         self.auth_token_expires = context.expiration
         self.auth_user_info = context.user
         self.auth_user_roles = context.roles
+
+        if self.auth_cache is not None:
+            self.auth_cache.put(self._cache_key, context)
 
     def _fetch_auth_context_from_cache(self):
         """
