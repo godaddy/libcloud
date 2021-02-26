@@ -818,7 +818,7 @@ class OpenStackIdentityConnection(ConnectionUserAndKey):
             return False
 
         # See if there's a new token in the cache
-        self._fetch_auth_context_from_cache()
+        self._load_auth_context_from_cache()
 
         # If there was a token in the cache, it is now stored in our local
         # auth_token and related fields.  Ensure it is still valid.
@@ -871,7 +871,7 @@ class OpenStackIdentityConnection(ConnectionUserAndKey):
         if self.auth_cache is not None:
             self.auth_cache.put(self._cache_key, context)
 
-    def _fetch_auth_context_from_cache(self):
+    def _load_auth_context_from_cache(self):
         """
         Fetch an authentication context for this connection from the cache.
 
@@ -1466,8 +1466,8 @@ class OpenStackIdentity_3_0_Connection(OpenStackIdentityConnection):
         user = self._to_user(data=response.object['user'])
         return user
 
-    def _fetch_auth_context_from_cache(self):
-        context = super()._fetch_auth_context_from_cache()
+    def _load_auth_context_from_cache(self):
+        context = super()._load_auth_context_from_cache()
         if context is None:
             return None
 
